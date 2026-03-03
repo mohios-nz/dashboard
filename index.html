@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mohios — Marketplace Economics Dashboard</title>
+<meta name="description" content="Marketplace economics and scaling intelligence dashboard by Mohios.">
+<link rel="icon" href="https://mohios.com/favicon.ico" type="image/x-icon">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0c1220;--surface:#131c30;--surface2:#192440;--surface3:#1e2d50;
+  --border:#263354;--border2:#2e3d62;
+  --text:#f1f5f9;--text2:#c8d5e4;--text3:#8fa3bc;--text4:#6d8099;
+  --orange:#f97316;--orange-soft:#fb923c;--orange-dim:rgba(249,115,22,0.1);--orange-border:rgba(249,115,22,0.25);
+  --cyan:#22d3ee;--cyan-dim:rgba(34,211,238,0.1);--cyan-border:rgba(34,211,238,0.22);
+  --green:#34d399;--green-dim:rgba(52,211,153,0.1);--green-border:rgba(52,211,153,0.22);
+  --red:#f87171;--red-dim:rgba(248,113,113,0.1);--red-border:rgba(248,113,113,0.22);
+  --purple:#a78bfa;--purple-dim:rgba(167,139,250,0.1);
+  --blue:#60a5fa;--blue-dim:rgba(96,165,250,0.1);
+  --mono:'JetBrains Mono',monospace;--sans:'Inter',system-ui,sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased;line-height:1.5}
+input[type=number]{-moz-appearance:textfield}
+input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none}
+input:focus{outline:none}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:#2a3a5c;border-radius:3px}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useMemo} = React;
+
+const fmt = n => {
+  if (n < 0) return '-' + fmt(-n);
+  return n >= 1e6 ? `$${(n/1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n/1e3).toFixed(1)}K` : `$${Math.round(n)}`;
+};
+const pct = n => `${Math.round(n*100)}%`;
+
+function Input({label, value, onChange, prefix, suffix, step=1, min=0, max=9999999}) {
+  return <div style={{marginBottom:16}}>
+    <label style={{display:'block',fontSize:11,fontWeight:700,color:'var(--text3)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.1em'}}>{label}</label>
+    <div style={{display:'flex',alignItems:'center',background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,overflow:'hidden'}}>
+      {prefix && <span style={{padding:'0 0 0 12px',color:'var(--text3)',fontSize:14,fontFamily:'var(--mono)'}}>{prefix}</span>}
+      <input type="number" value={value} onChange={e=>onChange(Number(e.target.value))} min={min} max={max} step={step}
+        style={{flex:1,background:'transparent',border:'none',padding:'10px 8px',color:'var(--text)',fontSize:15,fontFamily:'var(--mono)',fontWeight:500,width:'100%'}}
+        onFocus={e=>{e.target.parentElement.style.borderColor='var(--orange)';e.target.parentElement.style.boxShadow='0 0 0 1px rgba(249,115,22,0.15)'}}
+        onBlur={e=>{e.target.parentElement.style.borderColor='var(--border)';e.target.parentElement.style.boxShadow='none'}}/>
+      {suffix && <span style={{padding:'0 12px 0 4px',color:'var(--text3)',fontSize:12,fontFamily:'var(--mono)'}}>{suffix}</span>}
+    </div>
+  </div>;
+}
+
+function Metric({label, value, sub, color}) {
+  const c = color==='red'?'var(--red)':color==='green'?'var(--green)':color==='cyan'?'var(--cyan)':color==='orange'?'var(--orange)':color==='purple'?'var(--purple)':color==='blue'?'var(--blue)':'var(--text)';
+  return <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:12,padding:'16px 20px'}}>
+    <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
+      {color && <div style={{width:6,height:6,borderRadius:3,background:c}} />}
+      <span style={{fontSize:11,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{label}</span>
+    </div>
+    <div style={{fontSize:26,fontWeight:700,fontFamily:'var(--mono)',color:c,letterSpacing:'-0.02em'}}>{value}</div>
+    {sub && <div style={{fontSize:12,color:'var(--text4)',marginTop:4}}>{sub}</div>}
+  </div>;
+}
+
+function CostBar({label, value, maxVal, color, amount}) {
+  const w = maxVal > 0 ? Math.max((value / maxVal) * 100, 1) : 0;
+  return <div style={{marginBottom:14}}>
+    <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
+      <span style={{fontSize:13,color:'var(--text2)'}}>{label}</span>
+      <span style={{fontSize:14,fontFamily:'var(--mono)',fontWeight:600,color:'var(--text)'}}>{amount}</span>
+    </div>
+    <div style={{height:6,background:'var(--surface2)',borderRadius:3,overflow:'hidden'}}>
+      <div style={{height:'100%',borderRadius:3,background:color,width:`${w}%`,transition:'width 0.6s ease'}} />
+    </div>
+  </div>;
+}
+
+function Compare({label, before, after, better='lower'}) {
+  const nb=typeof before==='number'?before:null,na=typeof after==='number'?after:null;
+  const imp=nb!==null&&na!==null?(better==='lower'?na<nb:na>nb):false;
+  const d=nb&&nb!==0&&na!==null?((na-nb)/Math.abs(nb))*100:null;
+  const show=v=>typeof v==='string'?v:fmt(v);
+  return <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
+    <span style={{fontSize:13,color:'var(--text2)'}}>{label}</span>
+    <div style={{display:'flex',alignItems:'center',gap:10}}>
+      <span style={{fontSize:12,color:'var(--text4)',fontFamily:'var(--mono)',textDecoration:'line-through',opacity:0.6}}>{show(before)}</span>
+      <span style={{fontSize:11,color:'var(--text4)'}}>→</span>
+      <span style={{fontSize:14,fontWeight:700,fontFamily:'var(--mono)',color:imp?'var(--cyan)':'var(--orange)'}}>{show(after)}</span>
+      {d!==null&&Math.abs(d)>0.5&&<span style={{fontSize:10,fontFamily:'var(--mono)',fontWeight:700,color:imp?'var(--green)':'var(--red)',background:imp?'var(--green-dim)':'var(--red-dim)',padding:'2px 6px',borderRadius:4}}>{d>0?'+':''}{Math.round(d)}%</span>}
+    </div>
+  </div>;
+}
+
+function App() {
+  const [tab,setTab]=useState(0);
+  const [ai,setAi]=useState(false);
+  const [aiPanel,setAiPanel]=useState(false);
+
+  const [clients,setClients]=useState(14);
+  const [avgRev,setAvgRev]=useState(14300);
+  const [cpc,setCpc]=useState(7);
+  const [cPay,setCPay]=useState(1500);
+  const [mgrs,setMgrs]=useState(7);
+  const [mPay,setMPay]=useState(2000);
+  const [cooPay,setCooPay]=useState(5000);
+  const [overhead,setOverhead]=useState(5000);
+
+  const [tMRR,setTMRR]=useState(1000000);
+  const [tAvg,setTAvg]=useState(50000);
+  const [churn,setChurn]=useState(10);
+  const [mCap,setMCap]=useState(2);
+  const [mo2t,setMo2t]=useState(10);
+
+  const [aiCap,setAiCap]=useState(6);
+  const [aiCPM,setAiCPM]=useState(200);
+  const [aiSetup,setAiSetup]=useState(15000);
+
+  const l1 = useMemo(() => {
+    const em=ai?Math.max(Math.ceil(clients/aiCap),1):mgrs;
+    const rev=clients*avgRev,creators=clients*cpc,cc=creators*cPay,mc=em*mPay,ac=ai?clients*aiCPM:0;
+    const tc=cc+mc+cooPay+ac+overhead,gp=rev-tc,gm=rev>0?gp/rev:0;
+    return{rev,creators,cc,mc,ac,tc,gp,gm,em,ppc:clients>0?gp/clients:0,rpc:creators>0?rev/creators:0,cpm:em>0?creators/em:0};
+  },[clients,avgRev,cpc,cPay,mgrs,mPay,cooPay,overhead,ai,aiCap,aiCPM]);
+
+  const l2 = useMemo(() => {
+    const cap=ai?aiCap:mCap,tc=tAvg>0?Math.ceil(tMRR/tAvg):0,tcr=tc*cpc;
+    const mch=Math.ceil(tcr*(churn/100)),mn=cap>0?Math.ceil(tc/cap):0;
+    const cm=ai?Math.max(Math.ceil(clients/aiCap),1):mgrs;
+    const nm=Math.max(0,mn-cm),nc=mo2t>0?Math.ceil(Math.max(0,tc-clients)/mo2t):0;
+    const cn=Math.max(0,tcr-clients*cpc),ncr=mo2t>0?Math.ceil(cn/mo2t)+mch:0;
+    const ramp=[];let c=clients;
+    for(let m=0;m<=mo2t;m++){
+      const rv=c*tAvg,mg=Math.max(Math.ceil(c/Math.max(cap,1)),1),a=ai?c*aiCPM:0;
+      const co=(c*cpc*cPay)+(mg*mPay)+cooPay+a+overhead;
+      ramp.push({m,c,rv,p:rv-co});if(m<mo2t)c=Math.min(c+nc,tc);
+    }
+    const tr=tc*tAvg,as=ai?tc*aiCPM:0,tco=(tcr*cPay)+(mn*mPay)+cooPay*2+as+overhead*2,tp=tr-tco,tm=tr>0?tp/tr:0;
+    const bm=Math.ceil(tc/Math.max(mCap,1)),bc=(tcr*cPay)+(bm*mPay)+cooPay*2+overhead*2,bp=tr-bc,bmg=tr>0?bp/tr:0;
+    return{tc,tcr,mch,mn,nm,nc,ncr,ramp,tr,tco,tp,tm,bm,bc,bp,bmg};
+  },[tMRR,tAvg,cpc,cPay,mgrs,mPay,cooPay,overhead,churn,mCap,mo2t,clients,ai,aiCap,aiCPM]);
+
+  const hs=l1.rev<1e5?0:l1.rev<3e5?1:l1.rev<1e6?2:l1.rev<3e6?3:4;
+  const card={background:'var(--surface)',border:'1px solid var(--border)',borderRadius:12,padding:24};
+  const h2s={fontSize:13,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:20};
+
+  return <div style={{minHeight:'100vh'}}>
+    {/* HEADER */}
+    <div style={{padding:'24px 32px 0',maxWidth:1100,margin:'0 auto'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
+        <div>
+          <h1 style={{fontSize:24,fontWeight:800,letterSpacing:'-0.02em'}}>Marketplace Economics Dashboard</h1>
+          <p style={{fontSize:14,color:'var(--text3)',marginTop:4}}>Two-sided marketplace model: Brands ⇄ Creator Network. All inputs are editable — adjust to model scenarios live.</p>
+        </div>
+      </div>
+
+      <div style={{display:'flex',alignItems:'center',gap:12,marginTop:20}}>
+        <div style={{display:'flex',flex:1,background:'var(--surface)',borderRadius:10,border:'1px solid var(--border)',overflow:'hidden'}}>
+          {[{n:'Unit Economics',i:'01'},{n:'Growth Engine',i:'02'},{n:'Path to $1M',i:'03'}].map((t,i)=>
+            <button key={i} onClick={()=>setTab(i)} style={{flex:1,padding:'13px 16px',fontSize:14,fontWeight:600,border:'none',cursor:'pointer',background:tab===i?'var(--surface3)':'transparent',color:tab===i?'var(--text)':'var(--text3)',borderRight:i<2?'1px solid var(--border)':'none',transition:'all 0.2s'}}><span style={{color:'var(--text4)',marginRight:6,fontFamily:'var(--mono)',fontSize:12}}>{t.i}</span>{t.n}</button>
+          )}
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          <div onClick={()=>setAi(!ai)} style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer',background:ai?'var(--cyan-dim)':'var(--surface)',border:`1px solid ${ai?'var(--cyan-border)':'var(--border)'}`,borderRadius:10,padding:'9px 14px',transition:'all 0.3s',userSelect:'none'}}>
+            <div style={{position:'relative',width:36,height:20,borderRadius:10,background:ai?'rgba(34,211,238,0.3)':'var(--border2)',transition:'all 0.3s'}}>
+              <div style={{position:'absolute',top:2,width:16,height:16,borderRadius:8,background:ai?'var(--cyan)':'var(--text4)',left:ai?18:2,transition:'all 0.3s',boxShadow:ai?'0 0 8px rgba(34,211,238,0.4)':'none'}}/>
+            </div>
+            <span style={{fontSize:13,fontWeight:600,color:ai?'var(--cyan)':'var(--text3)',whiteSpace:'nowrap'}}>AI Agents</span>
+            <div style={{width:6,height:6,borderRadius:3,background:ai?'var(--cyan)':'var(--text4)',animation:ai?'pulse 2s infinite':'none'}}/>
+          </div>
+          <div onClick={()=>setAiPanel(!aiPanel)} title="AI Agent details" style={{width:32,height:32,borderRadius:8,background:aiPanel?'var(--cyan-dim)':'var(--surface)',border:`1px solid ${aiPanel?'var(--cyan-border)':'var(--border)'}`,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:14,color:aiPanel?'var(--cyan)':'var(--text3)',fontWeight:700,transition:'all 0.2s'}}>ℹ</div>
+        </div>
+      </div>
+    </div>
+
+    {/* AI PANEL */}
+    {aiPanel && <div style={{maxWidth:1100,margin:'12px auto 0',padding:'0 32px'}}>
+      <div style={{background:ai?'var(--cyan-dim)':'var(--surface)',border:`1px solid ${ai?'var(--cyan-border)':'var(--border)'}`,borderRadius:12,padding:24}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:ai?'var(--cyan)':'var(--text)'}}>⚡ AI Agent Architecture</h3>
+          <button onClick={()=>setAiPanel(false)} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:18,padding:4}}>✕</button>
+        </div>
+        <p style={{fontSize:14,color:'var(--text2)',marginBottom:18}}>Three agents per campaign handle the repeatable loop: check → coach → report. Managers shift from task-checking to strategic oversight.</p>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:14,marginBottom:18}}>
+          {[
+            {icon:'📋',name:'Ops Bot',color:'var(--cyan)',items:['Platform checks (IG, TikTok, FB, YT)','Status: posted / missing / late','Daily checklist + nudge','Escalation only when needed'],rep:'70% of daily check-ins'},
+            {icon:'🎯',name:'Creator Coach',color:'var(--purple)',items:['Review against campaign brief','Quality flags + suggestions','Weekly scorecard + peer ranks','Accountability tracking'],rep:'Quality review + tracking'},
+            {icon:'📊',name:'Controller',color:'var(--orange)',items:['Delivered vs. contracted','Views, engagement, consistency','Auto client reports','Underperformance alerts'],rep:'Reporting + data gathering'},
+          ].map((a,i)=><div key={i} style={{background:'var(--surface2)',borderRadius:10,padding:16,border:`1px solid var(--border2)`}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}><span style={{fontSize:18}}>{a.icon}</span><span style={{fontSize:15,fontWeight:700,color:a.color}}>{a.name}</span></div>
+            {a.items.map((it,j)=><div key={j} style={{fontSize:13,color:'var(--text2)',marginBottom:5,paddingLeft:10,borderLeft:`2px solid ${a.color}44`}}>{it}</div>)}
+            <div style={{marginTop:10,fontSize:12,color:a.color,fontWeight:700}}>Replaces: {a.rep}</div>
+          </div>)}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:14}}>
+          <Input label="Campaigns / Mgr (AI)" value={aiCap} onChange={setAiCap} suffix="each" min={1} max={20} />
+          <Input label="Agent Cost / Campaign" value={aiCPM} onChange={setAiCPM} prefix="$" suffix="/mo" step={50} />
+          <Input label="Setup Cost (one-time)" value={aiSetup} onChange={setAiSetup} prefix="$" step={1000} />
+        </div>
+        {ai&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20,marginTop:8}}>
+          <div><div style={{fontSize:12,fontWeight:700,color:'var(--text2)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.08em'}}>Impact Now ({clients} clients)</div>
+            <Compare label="Managers" before={mgrs} after={l1.em} better="lower"/>
+            <Compare label="Manager Cost" before={mgrs*mPay} after={l1.em*mPay} better="lower"/>
+            <Compare label="Net Savings/mo" before={0} after={Math.max(0,(mgrs*mPay)-(l1.em*mPay+l1.ac))} better="higher"/>
+          </div>
+          <div><div style={{fontSize:12,fontWeight:700,color:'var(--text2)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.08em'}}>At Scale ({l2.tc} clients)</div>
+            <Compare label="Managers" before={l2.bm} after={l2.mn} better="lower"/>
+            <Compare label="Annual Profit" before={l2.bp*12} after={l2.tp*12} better="higher"/>
+            {l2.tp>l2.bp&&<div style={{marginTop:10,padding:'8px 12px',background:'var(--green-dim)',border:'1px solid var(--green-border)',borderRadius:8,fontSize:13,fontWeight:600,color:'var(--green)'}}>+{fmt((l2.tp-l2.bp)*12)}/year with AI agents</div>}
+          </div>
+        </div>}
+      </div>
+    </div>}
+
+    {/* CONTENT */}
+    <div style={{maxWidth:1100,margin:'0 auto',padding:'20px 32px 60px'}}>
+      {/* TAB 0 */}
+      {tab===0&&<>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:12,marginBottom:20}}>
+          <Metric label="Monthly Revenue" value={fmt(l1.rev)} sub={`${clients} clients × ${fmt(avgRev)}`}/>
+          <Metric label="Total COGS" value={fmt(l1.tc)} sub={`${l1.creators} creators + ${l1.em} managers`}/>
+          <Metric label="Gross Profit" value={fmt(l1.gp)} color={l1.gm<0.3?'red':l1.gm<0.5?'orange':'green'}/>
+          <Metric label="Gross Margin" value={pct(l1.gm)} sub="Target: 50%+" color={l1.gm<0.3?'red':l1.gm<0.5?'orange':'green'}/>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'280px 1fr',gap:20}}>
+          <div style={card}>
+            <h2 style={h2s}>Inputs</h2>
+            <Input label="Active Clients" value={clients} onChange={setClients} suffix="clients"/>
+            <Input label="Avg Revenue / Client" value={avgRev} onChange={setAvgRev} prefix="$" suffix="/mo" step={500}/>
+            <Input label="Creators per Campaign" value={cpc} onChange={setCpc} suffix="creators"/>
+            <Input label="Avg Creator Pay" value={cPay} onChange={setCPay} prefix="$" suffix="/mo" step={100}/>
+            <Input label="Campaign Managers" value={mgrs} onChange={setMgrs} suffix="managers"/>
+            <Input label="Manager Pay" value={mPay} onChange={setMPay} prefix="$" suffix="/mo" step={500}/>
+            <Input label="COO" value={cooPay} onChange={setCooPay} prefix="$" suffix="/mo" step={500}/>
+            <Input label="Other Overhead" value={overhead} onChange={setOverhead} prefix="$" suffix="/mo" step={500}/>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:20}}>
+            <div style={card}>
+              <h2 style={h2s}>Cost Waterfall</h2>
+              <CostBar label={`Creator Costs (${l1.creators} creators)`} value={l1.cc} maxVal={l1.rev} color="var(--red)" amount={fmt(l1.cc)}/>
+              <CostBar label={`Manager Costs (${l1.em} managers)`} value={l1.mc} maxVal={l1.rev} color="var(--orange)" amount={fmt(l1.mc)}/>
+              {ai&&<CostBar label={`AI Agents (${clients} campaigns)`} value={l1.ac} maxVal={l1.rev} color="var(--cyan)" amount={fmt(l1.ac)}/>}
+              <CostBar label="COO" value={cooPay} maxVal={l1.rev} color="var(--purple)" amount={fmt(cooPay)}/>
+              <CostBar label="Other Overhead" value={overhead} maxVal={l1.rev} color="var(--text4)" amount={fmt(overhead)}/>
+              <div style={{borderTop:'1px solid var(--border)',paddingTop:12,marginTop:4}}>
+                <CostBar label="Gross Profit" value={Math.max(l1.gp,0)} maxVal={l1.rev} color="var(--green)" amount={fmt(l1.gp)}/>
+              </div>
+            </div>
+            <div><h2 style={h2s}>Per-Unit Economics</h2>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
+                <div style={card}><div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}><div style={{width:6,height:6,borderRadius:3,background:'var(--orange)'}}/><span style={{fontSize:11,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Profit per Client</span></div>
+                  <div style={{fontSize:24,fontWeight:700,fontFamily:'var(--mono)',color:l1.ppc>0?'var(--text)':'var(--red)'}}>{fmt(l1.ppc)}</div>
+                  <div style={{fontSize:12,color:'var(--text3)',marginTop:4}}>Revenue {fmt(avgRev)} − Cost {fmt(avgRev-l1.ppc)}</div></div>
+                <div style={card}><div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}><div style={{width:6,height:6,borderRadius:3,background:'var(--orange)'}}/><span style={{fontSize:11,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Revenue per Creator</span></div>
+                  <div style={{fontSize:24,fontWeight:700,fontFamily:'var(--mono)'}}>{fmt(l1.rpc)}</div>
+                  <div style={{fontSize:12,color:'var(--text3)',marginTop:4}}>Cost {fmt(cPay)} → ROI {l1.rpc>0?Math.round(((l1.rpc-cPay)/cPay)*100):0}%</div></div>
+                <div style={card}><div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}><div style={{width:6,height:6,borderRadius:3,background:'var(--orange)'}}/><span style={{fontSize:11,fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Creators per Manager</span></div>
+                  <div style={{fontSize:24,fontWeight:700,fontFamily:'var(--mono)'}}>{Math.round(l1.cpm)}</div>
+                  <div style={{fontSize:12,color:'var(--text3)',marginTop:4}}>{(clients/Math.max(l1.em,1)).toFixed(1)} campaigns each{ai?' (AI)':''}</div></div>
+              </div>
+            </div>
+            {l1.gm<0.5&&<div style={{background:'var(--red-dim)',border:'1px solid var(--red-border)',borderRadius:10,padding:'14px 18px'}}>
+              <span style={{fontSize:14}}>⚠️ </span><strong style={{color:'var(--red)',fontSize:14}}>Margin Alert:</strong>
+              <span style={{color:'var(--text2)',fontSize:14}}> At {pct(l1.gm)} gross margin, there's {l1.gm<0.2?'almost no':'limited'} room for growth investment, new hires, or absorbing client churn. Target 50%+ to fund scaling sustainably.</span>
+            </div>}
+            {ai&&<div style={{background:'var(--cyan-dim)',border:'1px solid var(--cyan-border)',borderRadius:10,padding:'14px 18px',fontSize:13,color:'var(--cyan)'}}>⚡ <strong>AI Mode:</strong> Managers {mgrs} → {l1.em}. Each handles {aiCap} campaigns with agent support. Monthly change: {fmt((mgrs*mPay)-(l1.em*mPay+l1.ac))}.</div>}
+          </div>
+        </div>
+      </>}
+
+      {/* TAB 1 */}
+      {tab===1&&<>
+        <div style={{display:'grid',gridTemplateColumns:'280px 1fr',gap:20}}>
+          <div style={card}>
+            <h2 style={h2s}>Target State</h2>
+            <Input label="Target MRR" value={tMRR} onChange={setTMRR} prefix="$" step={50000}/>
+            <Input label="Avg Rev at Target" value={tAvg} onChange={setTAvg} prefix="$" suffix="/mo" step={5000}/>
+            <Input label="Creator Churn" value={churn} onChange={setChurn} suffix="%" min={0} max={50}/>
+            <Input label={ai?"Clients/Mgr (AI)":"Clients / Manager"} value={ai?aiCap:mCap} onChange={ai?setAiCap:setMCap} suffix="each" min={1} max={20}/>
+            <Input label="Months to Target" value={mo2t} onChange={setMo2t} suffix="months" min={1} max={24}/>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:20}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:12}}>
+              <Metric label="Clients Needed" value={l2.tc} sub={`+${Math.max(0,l2.tc-clients)} new`} color="blue"/>
+              <Metric label="Creators Needed" value={l2.tcr} sub={`+${Math.max(0,l2.tcr-l1.creators)} new`} color="purple"/>
+              <Metric label="Managers Needed" value={l2.mn} sub={`+${l2.nm} new hires`} color={ai?'cyan':'orange'}/>
+              <Metric label="Monthly Churn" value={l2.mch} sub={`${churn}% replacement`} color="red"/>
+            </div>
+            <div style={card}>
+              <h2 style={h2s}>Monthly Execution Load</h2>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:16,textAlign:'center'}}>
+                <div><div style={{fontSize:34,fontWeight:700,fontFamily:'var(--mono)',color:'var(--orange)'}}>{l2.nc}</div><div style={{fontSize:13,color:'var(--text2)',marginTop:4}}>New clients / month</div></div>
+                <div><div style={{fontSize:34,fontWeight:700,fontFamily:'var(--mono)',color:'var(--purple)'}}>{l2.ncr}</div><div style={{fontSize:13,color:'var(--text2)',marginTop:4}}>Creators to recruit / mo</div><div style={{fontSize:12,color:'var(--text3)'}}>incl. churn</div></div>
+                <div><div style={{fontSize:34,fontWeight:700,fontFamily:'var(--mono)',color:l2.ncr>30?'var(--red)':'var(--green)'}}>{l2.ncr>30?'⚠':'✓'}</div><div style={{fontSize:13,color:l2.ncr>30?'var(--red)':'var(--green)',marginTop:4}}>{l2.ncr>30?'Pipeline at risk':'Manageable'}</div></div>
+              </div>
+            </div>
+            <div style={card}>
+              <h2 style={h2s}>Revenue Ramp</h2>
+              {l2.ramp.filter((_,i)=>i%Math.max(1,Math.floor(l2.ramp.length/8))===0||i===l2.ramp.length-1).map((r,i)=>
+                <div key={i} style={{display:'flex',alignItems:'center',gap:12,marginBottom:8}}>
+                  <div style={{width:40,textAlign:'right',fontSize:12,color:'var(--text3)',fontFamily:'var(--mono)',flexShrink:0,fontWeight:600}}>M{r.m}</div>
+                  <div style={{flex:1,background:'var(--surface2)',borderRadius:8,height:28,overflow:'hidden',position:'relative'}}>
+                    <div style={{position:'absolute',height:'100%',background:'rgba(96,165,250,0.2)',borderRadius:8,width:`${(r.rv/Math.max(tMRR,1))*100}%`,transition:'width 0.5s'}}/>
+                    <div style={{position:'absolute',height:'100%',background:ai?'rgba(34,211,238,0.35)':'rgba(52,211,153,0.35)',borderRadius:8,width:`${(Math.max(r.p,0)/Math.max(tMRR,1))*100}%`,transition:'width 0.5s'}}/>
+                    <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 12px'}}>
+                      <span style={{fontSize:12,color:'var(--text)',fontFamily:'var(--mono)',fontWeight:500}}>{r.c} clients</span>
+                      <span style={{fontSize:12,color:'var(--text2)',fontFamily:'var(--mono)',fontWeight:500}}>{fmt(r.rv)} · {fmt(r.p)} profit</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+              <Metric label="Monthly Profit at Target" value={fmt(l2.tp)} sub={`${pct(l2.tm)} margin`} color={l2.tm>0.3?'green':'red'}/>
+              <Metric label="Annual Run-Rate" value={fmt(l2.tp*12)} sub="At target state" color="green"/>
+            </div>
+            <div style={card}>
+              <h2 style={h2s}>Bottleneck Priority</h2>
+              {[
+                {n:'Operating System',sv:3,d:'Fragmented tools. No source of truth.'},
+                {n:'Creator Pipeline',sv:l2.ncr>30?3:l2.ncr>15?2:1,d:`Need ${l2.ncr} new creators/month incl. churn.`},
+                {n:'Manager Layer',sv:ai?(l2.nm>3?1:0):(l2.nm>5?3:2),d:ai?`AI: ${l2.mn} needed (${l2.nm} new).`:`Need ${l2.nm} new. No SOPs.`},
+                {n:'Client Qualification',sv:avgRev<25000?2:1,d:`Avg ${fmt(avgRev)} vs target ${fmt(tAvg)}.`},
+                {n:'Creator Accountability',sv:ai?1:2,d:ai?'AI agents handle daily checks.':'Guaranteed pay, no enforcement.'},
+              ].sort((a,b)=>b.sv-a.sv).map((b,i)=>{
+                const cl=[[,'var(--green)','var(--green-dim)','var(--green-border)','low'],[,'var(--text3)','var(--surface2)','var(--border)','med'],[,'var(--orange)','var(--orange-dim)','var(--orange-border)','high'],[,'var(--red)','var(--red-dim)','var(--red-border)','critical']][b.sv];
+                return <div key={i} style={{display:'flex',alignItems:'flex-start',gap:12,padding:'12px 16px',borderRadius:8,background:cl[2],border:`1px solid ${cl[3]}`,marginBottom:8}}>
+                  <div style={{width:8,height:8,borderRadius:4,background:cl[1],marginTop:5,flexShrink:0}}/>
+                  <div style={{flex:1}}><div style={{fontSize:14,fontWeight:600,color:'var(--text)'}}>{b.n}</div><div style={{fontSize:13,color:'var(--text2)',marginTop:2}}>{b.d}</div></div>
+                  <span style={{fontSize:11,fontWeight:700,color:cl[1],textTransform:'uppercase',flexShrink:0}}>{cl[4]}</span>
+                </div>;
+              })}
+            </div>
+          </div>
+        </div>
+      </>}
+
+      {/* TAB 2 */}
+      {tab===2&&<>
+        <div style={card}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+            <h2 style={{...h2s,margin:0}}>Scaling Stage</h2><span style={{fontSize:12,color:'var(--text3)'}}>Hormozi $100M framework</span>
+          </div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:4,marginBottom:18}}>
+            {['Stabilize','Systemize','Scale','Leverage','Exit'].map((st,i)=><React.Fragment key={i}>
+              <div style={{width:38,height:38,borderRadius:19,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,background:i<hs?'var(--green-dim)':i===hs?'var(--orange-dim)':'var(--surface2)',color:i<hs?'var(--green)':i===hs?'var(--orange)':'var(--text4)',border:`${i===hs?2:1}px solid ${i<hs?'var(--green-border)':i===hs?'var(--orange-border)':'var(--border)'}`}}>{i<hs?'✓':i+1}</div>
+              {i<4&&<div style={{width:28,height:2,background:i<hs?'var(--green-border)':'var(--border)'}}/>}
+            </React.Fragment>)}
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8}}>
+            {[{s:'Stabilize',r:'<$100K'},{s:'Systemize',r:'$100-300K'},{s:'Scale',r:'$300K-1M'},{s:'Leverage',r:'$1-3M'},{s:'Exit',r:'$3M+'}].map((x,i)=>
+              <div key={i} style={{padding:12,borderRadius:8,textAlign:'center',background:i===hs?'var(--orange-dim)':'var(--surface2)',border:`1px solid ${i===hs?'var(--orange-border)':'var(--border)'}`}}>
+                <div style={{fontSize:13,fontWeight:700,color:i===hs?'var(--orange)':'var(--text3)'}}>{x.s}</div><div style={{fontSize:12,color:i===hs?'var(--orange-soft)':'var(--text4)',marginTop:2}}>{x.r}</div>
+              </div>)}
+          </div>
+          <div style={{marginTop:16,padding:'12px 16px',background:'var(--orange-dim)',border:'1px solid var(--orange-border)',borderRadius:8,fontSize:14,color:'var(--orange-soft)'}}><strong style={{color:'var(--orange)'}}>At {fmt(l1.rev)}/mo — Systemize.</strong> Operational foundation before growth. Premature scaling at $200-500K is the #1 agency killer.</div>
+        </div>
+
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20,marginTop:20}}>
+          <div style={card}>
+            <h2 style={h2s}>Money Model</h2>
+            {[{t:'I: Get Cash',s:'✓',d:'Core UGC proven. Strong inbound. 80% close.',c:'green'},{t:'II: Get More Cash',s:'◐',d:'Upsell $50K campaigns. Not structured yet.',c:'orange'},{t:'III: Continuity',s:'○',d:'Creator training, licensing, recurring analytics.',c:'gray'}].map((m,i)=>
+              <div key={i} style={{padding:16,borderRadius:8,background:m.c==='gray'?'var(--surface2)':m.c==='green'?'var(--green-dim)':'var(--orange-dim)',border:`1px solid ${m.c==='gray'?'var(--border)':m.c==='green'?'var(--green-border)':'var(--orange-border)'}`,marginBottom:10}}>
+                <div style={{fontSize:14,fontWeight:700,color:m.c==='gray'?'var(--text3)':m.c==='green'?'var(--green)':'var(--orange)',marginBottom:4}}>{m.t} {m.s}</div>
+                <div style={{fontSize:13,color:m.c==='gray'?'var(--text4)':'var(--text2)'}}>{m.d}</div>
+              </div>)}
+          </div>
+          <div style={card}>
+            <h2 style={h2s}>Marketplace Health</h2>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24}}>
+              <div><div style={{fontSize:12,fontWeight:700,color:'var(--purple)',textTransform:'uppercase',marginBottom:12,letterSpacing:'0.08em'}}>Supply — Creators</div>
+                {[['Active Pool',l1.creators,'text'],['Monthly Churn','~'+Math.ceil(l1.creators*churn/100),'text'],['Pipeline','Mentorship ⚠','orange'],['Cost',fmt(cPay)+'/mo','text']].map(([k,v,c],i)=><div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:8}}><span style={{color:'var(--text2)'}}>{k}</span><span style={{fontFamily:'var(--mono)',fontWeight:600,color:c==='orange'?'var(--orange)':'var(--text)'}}>{v}</span></div>)}
+              </div>
+              <div><div style={{fontSize:12,fontWeight:700,color:'var(--blue)',textTransform:'uppercase',marginBottom:12,letterSpacing:'0.08em'}}>Demand — Brands</div>
+                {[['Active',clients,'text'],['Avg Contract',fmt(avgRev)+'/mo','text'],['Acquisition','Organic ✓','green'],['Close Rate','~80%','text']].map(([k,v,c],i)=><div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:13,marginBottom:8}}><span style={{color:'var(--text2)'}}>{k}</span><span style={{fontFamily:'var(--mono)',fontWeight:600,color:c==='green'?'var(--green)':'var(--text)'}}>{v}</span></div>)}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{...card,marginTop:20}}>
+          <h2 style={h2s}>Competitive Moat</h2>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px 36px'}}>
+            {[{n:'Founder Content Engine',s:90},{n:'Mentorship Pipeline',s:85},{n:'Case Studies',s:80},{n:'Creator Pay Premium',s:60},{n:'Manager Layer',s:ai?55:25},{n:'Operating System',s:15}].map((m,i)=>
+              <div key={i} style={{marginBottom:6}}>
+                <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}><span style={{fontSize:13,color:'var(--text2)'}}>{m.n}</span><span style={{fontSize:13,fontFamily:'var(--mono)',fontWeight:700,color:m.s>60?'var(--green)':m.s>35?'var(--orange)':'var(--red)'}}>{m.s}%</span></div>
+                <div style={{width:'100%',background:'var(--surface2)',borderRadius:4,height:6}}><div style={{height:'100%',borderRadius:4,width:`${m.s}%`,background:m.s>60?'var(--green)':m.s>35?'var(--orange)':'var(--red)',opacity:0.6,transition:'width 0.6s'}}/></div>
+              </div>)}
+          </div>
+        </div>
+
+        <div style={{...card,marginTop:20}}>
+          <h2 style={h2s}>90-Day Scaling Roadmap</h2>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:16}}>
+            {[{t:'Weeks 1–4: Stabilize',c:'var(--orange)',items:['Centralize on one platform','Extract SOPs from best manager','Creator accountability framework','Close intake temporarily','Raise minimum to $20-25K']},
+              {t:'Weeks 5–8: Systemize',c:'var(--cyan)',items:['Deploy AI agent stack','Manager training playbook','Creator pipeline funnel','Reopen: 2 clients max','Economics dashboard live']},
+              {t:'Weeks 9–12: Scale',c:'var(--green)',items:['Controlled: 2-3 clients/mo','AI agents running daily ops','Creator bench pre-recruited','Premium tier designed ($50K+)','First upsell conversations']}
+            ].map((p,i)=><div key={i} style={{padding:18,borderRadius:10,background:'var(--surface2)',borderLeft:`3px solid ${p.c}`}}>
+              <div style={{fontSize:12,fontWeight:700,color:p.c,marginBottom:14,textTransform:'uppercase',letterSpacing:'0.06em'}}>{p.t}</div>
+              {p.items.map((it,j)=><div key={j} style={{fontSize:13,color:'var(--text2)',marginBottom:7,paddingLeft:12,borderLeft:`2px solid ${p.c}44`}}>{it}</div>)}
+            </div>)}
+          </div>
+          <div style={{marginTop:16,padding:'12px 18px',background:'var(--green-dim)',border:'1px solid var(--green-border)',borderRadius:8,fontSize:14,color:'var(--green)'}}><strong>The path:</strong> Systems + AI + fewer, better clients → higher margins → sustainable $1M.</div>
+        </div>
+      </>}
+    </div>
+
+    <div style={{borderTop:'1px solid var(--border)',padding:'18px 32px',maxWidth:1100,margin:'0 auto',display:'flex',justifyContent:'space-between'}}>
+      <span style={{fontSize:12,color:'var(--text4)'}}>Built by <strong style={{color:'var(--text3)'}}>Mohios</strong> · mohios.com · Prepared by Danny Holtschke, February 2026</span>
+      <span style={{fontSize:12,color:'var(--text4)'}}>All inputs are editable · Model assumptions are illustrative</span>
+    </div>
+  </div>;
+}
+ReactDOM.render(<App/>,document.getElementById('root'));
+</script>
+</body>
+</html>
